@@ -10,53 +10,41 @@ from datetime import datetime
 class ImageSubscriber(Node):
     def __init__(self):
         super().__init__('image_subscriber')
-        
-        # 1. Create the subscription to Node A's topic [cite: 286]
-        self.subscription = self.create_subscription(
-            Image,
-            'video_frames',
-            self.listener_callback,
-            10)
-        self.subscription  # prevent unused variable warning
-        
+
+        self.buffer_size = 10
+        self.topic_name = 'camera/image_raw'
+        self.subscription = self.create_subscription(Image,self.topic_name,self.listener_callback,self.buffer_size)
         self.bridge = CvBridge()
         self.frame_count = 0
         self.metadata_list = []
+        self.dropped_frames = 0  # Tracking frames we couldn't save
 
-        # 2. Dynamic Path Management (Crucial for the assessment)
-        # This creates paths relative to where the user runs the node [cite: 305, 306, 307]
+        # Using relative paths to make it generic
         self.output_dir = os.path.join(os.getcwd(), 'output')
         self.images_dir = os.path.join(self.output_dir, 'images')
         self.metadata_file = os.path.join(self.output_dir, 'metadata.json')
 
-        # Ensure directories exist so cv2.imwrite doesn't fail
         os.makedirs(self.images_dir, exist_ok=True)
-
-        # Requirement: Log when subscribing starts [cite: 296]
-        self.get_logger().info('Subscribing started: Node B is active and waiting for frames.')
+        self.get_logger().info('Subscriber started: waiting for image frames')
 
     def listener_callback(self, data):
         self.frame_count += 1
-        
-        # Get timestamps for display and filenames [cite: 288, 298]
-        display_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        file_time = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+        current_time = datetime.now()
+        # Variables we will use for overwriting the image received
+        display_time = current_time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        file_time = current_time.strftime("%Y%m%d_%H%M%S_%f")[:-3]
 
         try:
-            # 1. Convert ROS Image to OpenCV Image
-            cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+            received_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+            # Writing the required text on the image
+            cv2.putText(received_image, f"Timestamp: {display_time}", (20, 50),cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
-            # 2. Overlay the timestamp as text onto the image [cite: 288]
-            # cv2.putText(image, text, position, font, font_scale, color, thickness)
-            cv2.putText(cv_image, f"Timestamp: {display_time}", (20, 50), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-
-            # 3. Save the updated image to disk [cite: 289]
+            #Saving the image with unique name
             filename = f"frame_{self.frame_count:04d}_{file_time}.jpg"
             filepath = os.path.join(self.images_dir, filename)
-            cv2.imwrite(filepath, cv_image)
+            cv2.imwrite(filepath, received_image)
 
-            # 4. Save metadata [cite: 290, 291, 292, 293, 294]
+            # Saving the metadata as required
             meta_entry = {
                 "frame_id": self.frame_count,
                 "saved_file": filename,
@@ -64,28 +52,27 @@ class ImageSubscriber(Node):
             }
             self.metadata_list.append(meta_entry)
 
-            # Write the updated JSON list to disk
+            #Creating JSON file to save our metadata
             with open(self.metadata_file, 'w') as f:
                 json.dump(self.metadata_list, f, indent=4)
 
-            # 5. Log Success [cite: 297, 298, 299]
-            self.get_logger().info(f"Frame: {self.frame_count} | Time: {display_time} | Saved to: {filepath}")
+            self.get_logger().info(f"Frame Id: {self.frame_count} | TimeStamp: {display_time} | Path: {filepath}")
 
         except Exception as e:
-            # Requirement: Log any errors 
-            self.get_logger().error(f"Frame: {self.frame_count} | Error processing frame: {str(e)}")
-
+            self.dropped_frames += 1
+            self.get_logger().error(f"Frame Id: {self.frame_count} | TimeStamp: {display_time} | Error: {str(e)} | Total Dropped Frames: {self.dropped_frames}")
 def main(args=None):
-    rclpy.init(args=args)
-    node = ImageSubscriber()
-    
+    rclpy.init()
+    image_subscriber = ImageSubscriber()
     try:
-        rclpy.spin(node)
+        rclpy.spin(image_subscriber)
     except KeyboardInterrupt:
         pass
     finally:
-        node.destroy_node()
+        image_subscriber.destroy_node()
         rclpy.shutdown()
-
 if __name__ == '__main__':
     main()
+
+
+

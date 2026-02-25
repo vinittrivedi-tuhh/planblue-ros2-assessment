@@ -2,7 +2,7 @@
 
 > A ROS2 Jazzy colcon package that streams camera frames over a topic, overlays timestamps,
 > and saves images + metadata to disk.
-> Automatically falls back to a synthetic rainbow-frame generator if no webcam is detected.
+> Automatically falls back to a synthetic frame generator if no webcam is detected.
 
 ---
 
